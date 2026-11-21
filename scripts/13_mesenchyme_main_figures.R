@@ -1,0 +1,2246 @@
+###############################################################################
+# Lineage and mesenchymal UMAP/marker figures (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal), adapted)
+#
+# Source      : 3_main_figures.R
+# Input       : alldata_neonatal_injury.rds
+# Output      : Fig. 2 panels; Supplementary Figs. 1-2
+#
+# Code below is unchanged from the original analysis script.
+###############################################################################
+# -----------------------------------------------------------------------------
+# PATHS: this file keeps the absolute paths of the analysis server on which the
+# study was run (/data/nas1/xiangxiaoyu_OD/1.BPD+MSCs/1.scRNA/... and
+# /home/xxyloveme/study/BPD+MSCs/...). Set PROJ_DIR in config/paths.R and
+# replace those prefixes with your own project directory before running.
+# -----------------------------------------------------------------------------
+
+
+####################Mesenchymal分析###############
+
+source("./helper_functions/globals.R")
+source("./helper_functions/libraries.R")
+source("./helper_functions/cluster.R")
+source("./helper_functions/colors.R")
+
+N_WORKERS <- 12
+plan("multicore", workers = N_WORKERS)
+RhpcBLASctl::blas_set_num_threads(4)
+RhpcBLASctl::omp_set_num_threads(4)
+  
+merged_seurat <- readRDS("./alldata_neonatal_injury.rds")
+
+# ```{r, fig.width = 12}
+# Function for going from Seurat objects to UMAP projections easily.
+fortify.Seurat <- function(x){
+  xy <- as.data.frame(Embeddings(x, reduction = "umap"))
+  colnames(xy) <- c("x", "y")
+  xy$x <- as.numeric(xy$x)
+  xy$y <- as.numeric(xy$y)
+  
+  return(cbind(xy, as.data.frame(x@meta.data)))
+}
+
+Idents(merged_seurat) <- merged_seurat$celltype
+epi_fortify %<-% fortify.Seurat(subset(merged_seurat,
+                                       bulk_celltype == "Epithelial"))
+endo_fortify %<-% fortify.Seurat(subset(merged_seurat,
+                                        bulk_celltype == "Endothelial"))
+meso_fortify %<-% fortify.Seurat(subset(merged_seurat,
+                                        bulk_celltype == "Mesenchymal"))
+imm_fortify %<-% fortify.Seurat(subset(merged_seurat,
+                                       bulk_celltype == "Immune"))
+
+epi_fortify$celltype <- ordered(as.factor(epi_fortify$celltype),
+                                c("AT1",
+                                  "AT2",
+                                  "RASC",
+                                  "Secretory -3A1, -3A2",
+                                  "Secretory MUC5B",
+                                  "Basal",
+                                  "Multiciliated"))
+endo_fortify$celltype <- ordered(endo_fortify$celltype,
+                                 c("gCap",
+                                   "aCap",
+                                   "abCap",
+                                   "Arterial EC",
+                                   "Pulmonary venous EC",
+                                   "Systemic venous EC",
+                                   "Lymphatic"))
+meso_fortify$celltype <- ordered(as.factor(meso_fortify$celltype),
+                                 c("Adventitial FB",
+                                   "Activated FB",
+                                   "Alveolar FB",
+                                   "Alveolar MyoFB",
+                                   "Ductal MyoFB",
+                                   "Pericyte",
+                                   "VSMC"))
+imm_fortify$celltype <- ordered(as.factor(imm_fortify$celltype),
+                                c("cDC",
+                                  "NK Cell",
+                                  "NKT Cell",
+                                  "Alveolar macrophage",
+                                  "Monocyte",
+                                  "pDC",
+                                  "T Cell",
+                                  "B Cell",
+                                  "Mast cell",
+                                  "Plasma cell",
+                                  "Basophil",
+                                  "Neutrophil"))
+library(ggrepel)
+
+# 首先计算每个细胞类型的中心点坐标
+calculate_centroids <- function(fortify_data) {
+  centroids <- fortify_data %>%
+    group_by(celltype) %>%
+    summarise(
+      x = median(x),
+      y = median(y),
+      .groups = 'drop'
+    )
+  return(centroids)
+}
+
+# 计算每个细胞类型的中心点
+epi_centroids <- calculate_centroids(epi_fortify)
+imm_centroids <- calculate_centroids(imm_fortify)
+endo_centroids <- calculate_centroids(endo_fortify)
+meso_centroids <- calculate_centroids(meso_fortify)
+
+# 创建带标签的UMAP图
+all_umap <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_point(data = epi_fortify,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  geom_text_repel(data = epi_centroids,
+                  aes(x = x, y = y, label = celltype),
+                  size = 3, 
+                  box.padding = 0.5,
+                  max.overlaps = Inf,
+                  segment.color = 'grey50',
+                  segment.size = 0.2) +
+  scale_colour_manual(name = "Epithelium",
+                      values = color_safe,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 1)) +
+  allumap_theme() +
+  new_scale_color() +
+  ggrastr::rasterise(geom_point(data = imm_fortify,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  geom_text_repel(data = imm_centroids,
+                  aes(x = x, y = y, label = celltype),
+                  size = 3,
+                  box.padding = 0.5,
+                  max.overlaps = Inf,
+                  segment.color = 'grey50',
+                  segment.size = 0.2) +
+  scale_colour_manual(name = "Immune",
+                      values = color_safe,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 2)) +
+  allumap_theme() +
+  guides(colour = guide_legend(override.aes = list(size = 3))) +
+  new_scale_color() +
+  ggrastr::rasterise(geom_point(data = endo_fortify,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  geom_text_repel(data = endo_centroids,
+                  aes(x = x, y = y, label = celltype),
+                  size = 3,
+                  box.padding = 0.5,
+                  max.overlaps = Inf,
+                  segment.color = 'grey50',
+                  segment.size = 0.2) +
+  scale_colour_manual(name = "Endothelium",
+                      values = color_safe,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 3)) +
+  allumap_theme() +
+  guides(colour = guide_legend(override.aes = list(size = 3))) +
+  new_scale_color() +
+  ggrastr::rasterise(geom_point(data = meso_fortify,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  geom_text_repel(data = meso_centroids,
+                  aes(x = x, y = y, label = celltype),
+                  size = 3,
+                  box.padding = 0.5,
+                  max.overlaps = Inf,
+                  segment.color = 'grey50',
+                  segment.size = 0.2) +
+  scale_colour_manual(name = "Mesenchyme",
+                      values = color_safe,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 4)) +
+  theme(legend.text = element_markdown(size = 12),
+        legend.title = element_text(size = 12),
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent")) +
+  guides(colour = guide_legend(override.aes = list(size = 3))) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+gridExtra::grid.arrange(egg::set_panel_size(p = all_umap,
+                                            width = unit(20, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./Figure_1C_allumap.pdf",
+       egg::set_panel_size(p = all_umap,
+                           width = unit(20, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(12, "cm"),
+       height = unit(20, "cm"))
+
+
+
+#Mesenchymal细胞
+Mesenchymal_umap <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_point(data = meso_fortify,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Mesenchyme",
+                      values = color_safe,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 4)) +
+  theme(legend.text = element_markdown(size = 12),
+        legend.title = element_text(size = 12),
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent")) +
+  guides(colour = guide_legend(override.aes = list(size = 3))) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+
+
+
+
+# ```{r mini umap condition normal}
+merged_fortify_seurat_for_normal <- rbind(epi_fortify,
+                                          imm_fortify,
+                                          endo_fortify,
+                                          meso_fortify)
+merged_fortify_seurat_for_normal$condition <- ordered(as.factor(merged_fortify_seurat_for_normal$condition),
+                                                      c("BPD",
+                                                        "BPD+PH",
+                                                        "Acute preterm injury",
+                                                        "Term infant"))
+
+condition_umap <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_point(data = merged_fortify_seurat_for_normal %>% arrange(condition),
+                                aes(x = x, y = y, color = condition),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Condition",
+                      values = color_normal,
+                      guide = guide_legend(override.aes = list(size=3),
+                                           order = 1)) +
+  theme(aspect.ratio = 1,
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        axis.title = element_text(hjust = 0.5)) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+
+gridExtra::grid.arrange(egg::set_panel_size(p = condition_umap,
+                                            width = unit(20, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./Figure_1D_conditionumap_normal.pdf",
+       egg::set_panel_size(p = condition_umap,
+                           width = unit(20, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(12, "cm"),
+       height = unit(20, "cm"))
+
+
+# ```{r mini umap condition bpd}
+merged_fortify_seurat_for_bpd <- rbind(epi_fortify,
+                                       imm_fortify,
+                                       endo_fortify,
+                                       meso_fortify)
+merged_fortify_seurat_for_bpd$condition <- ordered(as.factor(merged_fortify_seurat_for_bpd$condition),
+                                                   c("Term infant",
+                                                     "BPD+PH",
+                                                     "Acute preterm injury",
+                                                     "BPD"))
+
+condition_umap <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_point(data = merged_fortify_seurat_for_bpd %>% arrange(condition),
+                                aes(x = x, y = y, color = condition),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Condition",
+                      values = color_bpd,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 1)) +
+  theme(aspect.ratio = 1,
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        axis.title = element_text(hjust = 0.5)) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+gridExtra::grid.arrange(egg::set_panel_size(p = condition_umap,
+                                            width = unit(20, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./Figure_1E_conditionumap_bpd.pdf",
+       egg::set_panel_size(p = condition_umap,
+                           width = unit(20, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(12, "cm"),
+       height = unit(20, "cm"))
+
+
+# ```{r mini umap condition bpd ph}
+merged_fortify_seurat_for_bpdph <- rbind(epi_fortify,
+                                         imm_fortify,
+                                         endo_fortify,
+                                         meso_fortify)
+merged_fortify_seurat_for_bpdph$condition <- ordered(as.factor(merged_fortify_seurat_for_bpdph$condition),
+                                                     c("Term infant",
+                                                       "Acute preterm injury",
+                                                       "BPD",
+                                                       "BPD+PH"))
+
+condition_umap <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_point(data = merged_fortify_seurat_for_bpdph %>% arrange(condition),
+                                aes(x = x, y = y, color = condition),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Condition",
+                      values = color_bpdph,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 1)) +
+  theme(aspect.ratio = 1,
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        axis.title = element_text(hjust = 0.5)) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+gridExtra::grid.arrange(egg::set_panel_size(p = condition_umap,
+                                            width = unit(20, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./Figure_1F_conditionumap_bpdph.pdf",
+       egg::set_panel_size(p = condition_umap,
+                           width = unit(20, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(12, "cm"),
+       height = unit(20, "cm"))
+
+# ```{r mini umap condition preterm}
+merged_fortify_seurat_for_preterm <- rbind(epi_fortify,
+                                           imm_fortify,
+                                           endo_fortify,
+                                           meso_fortify)
+merged_fortify_seurat_for_preterm$condition <- ordered(as.factor(merged_fortify_seurat_for_preterm$condition),
+                                                       c("Term infant",
+                                                         "BPD",
+                                                         "BPD+PH",
+                                                         "Acute preterm injury"))
+
+condition_umap <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_point(data = merged_fortify_seurat_for_preterm %>% arrange(condition),
+                                aes(x = x, y = y, color = condition),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Condition",
+                      values = color_pretermph,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 1)) +
+  theme(aspect.ratio = 1,
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        axis.title = element_text(hjust = 0.5)) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+gridExtra::grid.arrange(egg::set_panel_size(p = condition_umap,
+                                            width = unit(20, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./Figure_1G_conditionumap_preterm.pdf",
+       egg::set_panel_size(p = condition_umap,
+                           width = unit(20, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(12, "cm"),
+       height = unit(20, "cm"))
+
+# ```{r}
+Idents(merged_seurat) <- merged_seurat$celltype
+
+relabeled_markers <- parallelFindAllMarkers(merged_seurat)
+names(relabeled_markers) <- levels(Idents(merged_seurat))
+
+wb_markers_names <- levels(Idents(merged_seurat))
+wb_markers <- createWorkbook()
+for (idx in seq_along(wb_markers_names)) {
+  addWorksheet(wb_markers,
+               wb_markers_names[idx])
+  writeData(wb_markers,
+            wb_markers_names[idx],
+            relabeled_markers[[idx]],
+            rowNames = TRUE)
+}
+saveWorkbook(wb_markers,
+             file = "./data/checkpoint/figs/S_all_markers_per_celltype.xlsx",
+             overwrite = TRUE)
+
+```{r}
+celltype_order <- c("AT1",
+                    "AT2",
+                    "Intermediate",
+                    "RASC",
+                    "Secretory -3A1, -3A2",
+                    "Secretory MUC5B",
+                    "Basal",
+                    "Multiciliated",
+                    
+                    "gCap",
+                    "aCap",
+                    "abCap",
+                    "Arterial EC",
+                    "Pulmonary venous EC",
+                    "Systemic venous EC",
+                    "Lymphatic",
+                    
+                    "Alveolar FB",
+                    "Activated FB",
+                    "Adventitial FB",
+                    "Alveolar MyoFB",
+                    "Ductal MyoFB",
+                    "Pericyte",
+                    "VSMC",
+                    
+                    "T Cell",
+                    "NK Cell",
+                    "NKT Cell",
+                    "Alveolar macrophage",
+                    "Monocyte",
+                    "pDC",
+                    "cDC",
+                    "B Cell",
+                    "Mast cell",
+                    "Plasma cell",
+                    "Basophil",
+                    "Neutrophil"
+)
+
+merged_seurat$celltype <- ordered(as.factor(merged_seurat$celltype),
+                                  celltype_order)
+```
+
+```{r}
+epi_marker_genes <- c("AGER", "RTKN2", # AT1
+                      "SFTPC", "ABCA3", # AT2
+                      "ERBB4", "SCGB3A2", # RASC
+                      "SCGB1A1", "SCGB3A1", # Secretory -3A1, -3A2
+                      "MUC5B", "BPIFB1", # Secretory MUC5B
+                      "KRT5", "KRT17", # Basal
+                      "FOXJ1", "TMEM190" #Multiciliated
+)
+endo_marker_genes <- c("IL7R", "BTNL9", # gCap
+                       "CA4", "EDNRB", # aCap
+                       "ANKRD1", "APLN", # abCap
+                       "GJA5", "DKK2", # Arterial EC
+                       "HDAC9", "ACKR1", # Pulmonary venous EC
+                       "PLVAP", "SPRY1", # Systemic venous EC
+                       "CCL21", "PROX1" #Lymphatic
+)
+imm_marker_genes <- c("THEMIS", "CD6", #T Cell
+                      "NKG7", "FGFBP2", # NK Cell
+                      "GZMK", "TRDC", # NKT Cell
+                      "MARCO", "APOC1", # Alveolar macrophage
+                      "CD14", "FCN1",  # Monocyte
+                      "CLEC4C", "LINC01374",  # pDC
+                      "CLEC10A", "CD1C",  # cDC
+                      "MS4A1", "FCRL1",  # B Cell
+                      "CPA3", "TPSD1",  # Mast cell
+                      "IGHG1", "IGHG3", # Plasma cell
+                      "ATP10D", "LINC02458",  # Basophil
+                      "S100A9", "S100A8"  # Neutrophil
+)
+meso_marker_genes <- c("WNT2", "TCF21", # Alveolar FB
+                       "CTHRC1", "POSTN", # Activated FB
+                       "MFAP5", "SCARA5", # Adventitial FB
+                       "PDGFRA", "FGF18", # Alveolar MyoFB
+                       "WNT5A", "HHIP", # Ductal MyoFB
+                       "COX4I2", "CSPG4", # Pericyte
+                       "ITGA7", "NTRK3" # VSMC
+)
+```
+
+```{r}
+all_markers <- c(epi_marker_genes,
+                 endo_marker_genes,
+                 meso_marker_genes,
+                 imm_marker_genes)
+
+all_marker_plot <- DotPlot(merged_seurat,
+                           features = all_markers,
+                           group.by = "celltype",
+                           dot.scale = 6)
+
+all_marker_plot_w_theme <- all_marker_plot +
+  scale_color_gradientn(colors = rev(color_glacier),
+                        name = "Expression") +
+  scale_y_discrete(limits = rev) +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_text(face = "italic",
+                                   angle = 45,
+                                   hjust = 1,
+                                   size = 12),
+        aspect.ratio = 1,
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12))
+
+
+
+gridExtra::grid.arrange(egg::set_panel_size(p = all_marker_plot_w_theme,
+                                            width = unit(40, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./data/checkpoint/figs/2A_alldotplot.pdf",
+       egg::set_panel_size(p = all_marker_plot_w_theme,
+                           width = unit(40, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(30, "cm"),
+       height = unit(20, "cm"))
+
+```
+
+```{r}
+
+```
+
+```{r}
+Idents(merged_seurat) <- merged_seurat$condition
+no_preterm_or_immune <- subset(merged_seurat,
+                               idents = "Acute preterm injury",
+                               invert = TRUE)
+Idents(no_preterm_or_immune) <- no_preterm_or_immune$celltype_lineage
+no_preterm_or_immune <- subset(no_preterm_or_immune,
+                               idents = "Immune",
+                               invert = TRUE)
+Idents(no_preterm_or_immune) <- no_preterm_or_immune$celltype
+no_preterm_or_immune <- subset(no_preterm_or_immune,
+                               idents = c("Basal",
+                                          "Secretory MUC5B",
+                                          "abCap"),
+                               invert = TRUE)
+celltype_for_volc <- factor(levels(Idents(no_preterm_or_immune)))
+celltype_for_volc_w_lineage <- c(celltype_for_volc, factor(levels(no_preterm_or_immune$celltype_lineage)))
+
+markers_compare1 <- future.apply::future_lapply(celltype_for_volc_w_lineage,
+                                                function(x) {
+                                                  if(x %in% c("Epithelial", "Endothelial", "Mesenchymal", "Immune")) {
+                                                    Idents(merged_seurat) <- merged_seurat$celltype_lineage
+                                                  } else {
+                                                    Idents(merged_seurat) <- merged_seurat$celltype
+                                                  }
+                                                  merged_seurat_sub <- subset(merged_seurat,
+                                                                              idents = x)
+                                                  Idents(merged_seurat_sub) <- merged_seurat_sub$condition
+                                                  foundmarkers <- FindMarkers(merged_seurat_sub,
+                                                                              ident.1 = "BPD",
+                                                                              ident.2 = "Term infant",
+                                                                              test.use = "MAST",
+                                                                              logfc.threshold = 0)
+                                                  up_cat <- "up_in_bpd/down_in_term_infant"
+                                                  down_cat <- "up_in_term_infant/down_in_bpd"
+                                                  foundmarkers[up_cat] <- ifelse(foundmarkers$avg_log2FC > 1 &
+                                                                                   foundmarkers$p_val_adj < 1e-05 &
+                                                                                   !grepl("^RP|^MT-", rownames(foundmarkers)), TRUE, FALSE)
+                                                  foundmarkers[down_cat] <- ifelse(foundmarkers$avg_log2FC < -1 &
+                                                                                     foundmarkers$p_val_adj < 1e-05 &
+                                                                                     !grepl("^RP|^MT-", rownames(foundmarkers)), TRUE, FALSE)
+                                                  return(foundmarkers)
+                                                }
+)
+names(markers_compare1) <- celltype_for_volc_w_lineage
+wb_markers_names <- celltype_for_volc_w_lineage
+wb_markers <- createWorkbook()
+
+for (idx in seq_along(wb_markers_names)) {
+  print(idx)
+  addWorksheet(wb_markers,
+               as.character(wb_markers_names[idx]))
+  print(idx)
+  writeData(wb_markers,
+            as.character(wb_markers_names[idx]),
+            markers_compare1[[idx]],
+            colNames = TRUE,
+            rowNames = TRUE)
+}
+saveWorkbook(wb_markers,
+             file = paste0("./data/figures/deg/S_excel_deg_bpd_term_infant.xlsx"),
+             overwrite = TRUE)
+
+
+markers_compare2 <- future.apply::future_lapply(celltype_for_volc_w_lineage,
+                                                function(x) {
+                                                  if(x %in% c("Epithelial", "Endothelial", "Mesenchymal", "Immune")) {
+                                                    Idents(merged_seurat) <- merged_seurat$celltype_lineage
+                                                  } else {
+                                                    Idents(merged_seurat) <- merged_seurat$celltype
+                                                  }
+                                                  merged_seurat_sub <- subset(merged_seurat,
+                                                                              idents = x)
+                                                  Idents(merged_seurat_sub) <- merged_seurat_sub$condition
+                                                  foundmarkers <- FindMarkers(merged_seurat_sub,
+                                                                              ident.1 = "BPD+PH",
+                                                                              ident.2 = "Term infant",
+                                                                              test.use = "MAST",
+                                                                              logfc.threshold = 0)
+                                                  up_cat <- "up_in_bpdph/down_in_term_infant"
+                                                  down_cat <- "up_in_term_infant/down_in_bpdph"
+                                                  foundmarkers[up_cat] <- ifelse(foundmarkers$avg_log2FC > 1 &
+                                                                                   foundmarkers$p_val_adj < 1e-05 &
+                                                                                   !grepl("^RP|^MT-", rownames(foundmarkers)), TRUE, FALSE)
+                                                  foundmarkers[down_cat] <- ifelse(foundmarkers$avg_log2FC < -1 &
+                                                                                     foundmarkers$p_val_adj < 1e-05 &
+                                                                                     !grepl("^RP|^MT-", rownames(foundmarkers)), TRUE, FALSE)
+                                                  return(foundmarkers)
+                                                }
+)
+names(markers_compare2) <- celltype_for_volc_w_lineage
+wb_markers_names <- celltype_for_volc_w_lineage
+wb_markers <- createWorkbook()
+
+for (idx in seq_along(wb_markers_names)) {
+  addWorksheet(wb_markers,
+               as.character(wb_markers_names[idx]))
+  writeData(wb_markers,
+            wb_markers_names[idx],
+            markers_compare2[[idx]],
+            colNames = TRUE,
+            rowNames = TRUE)
+}
+wb_markers
+saveWorkbook(wb_markers,
+             file = paste0("./data/figures/deg/S_excel_deg_bpdph_term_infant.xlsx"),
+             overwrite = TRUE)
+
+
+markers_compare3 <- future.apply::future_lapply(celltype_for_volc_w_lineage,
+                                                function(x) {
+                                                  if(x %in% c("Epithelial", "Endothelial", "Mesenchymal", "Immune")) {
+                                                    Idents(merged_seurat) <- merged_seurat$celltype_lineage
+                                                  } else {
+                                                    Idents(merged_seurat) <- merged_seurat$celltype
+                                                  }
+                                                  merged_seurat_sub <- subset(merged_seurat,
+                                                                              idents = x)
+                                                  Idents(merged_seurat_sub) <- merged_seurat_sub$condition
+                                                  foundmarkers <- FindMarkers(merged_seurat_sub,
+                                                                              ident.1 = "BPD+PH",
+                                                                              ident.2 = "BPD",
+                                                                              test.use = "MAST",
+                                                                              logfc.threshold = 0)
+                                                  up_cat <- "up_in_bpdph/down_in_bpd"
+                                                  down_cat <- "up_in_bpd/down_in_bpdph"
+                                                  foundmarkers[up_cat] <- ifelse(foundmarkers$avg_log2FC > 1 &
+                                                                                   foundmarkers$p_val_adj < 1e-05 &
+                                                                                   !grepl("^RP|^MT-", rownames(foundmarkers)), TRUE, FALSE)
+                                                  foundmarkers[down_cat] <- ifelse(foundmarkers$avg_log2FC < -1 &
+                                                                                     foundmarkers$p_val_adj < 1e-05 &
+                                                                                     !grepl("^RP|^MT-", rownames(foundmarkers)), TRUE, FALSE)
+                                                  return(foundmarkers)
+                                                }
+)
+names(markers_compare3) <- celltype_for_volc_w_lineage
+wb_markers_names <- celltype_for_volc_w_lineage
+wb_markers <- createWorkbook()
+
+for (idx in seq_along(wb_markers_names)) {
+  addWorksheet(wb_markers,
+               as.character(wb_markers_names[idx]))
+  writeData(wb_markers,
+            as.character(wb_markers_names[idx]),
+            markers_compare3[[idx]],
+            colNames = TRUE,
+            rowNames = TRUE)
+}
+saveWorkbook(wb_markers,
+             file = paste0("./data/figures/deg/S_excel_deg_bpdph_bpd.xlsx"),
+             overwrite = TRUE)
+```
+
+
+```{r}
+Idents(merged_seurat) <- merged_seurat$celltype_lineage
+celltype_for_volc <- factor(levels(Idents(merged_seurat)))
+
+skip_set_size_plot <- function(ups) {
+  main <- ups$Main_bar
+  matrix <- ups$Matrix
+  ## find panel grob
+  panel_idx <- grep("panel", main$layout$name, fixed = TRUE)
+  ## find text grob
+  text_idx <- which(
+    vapply(main$grobs[[panel_idx]]$children, 
+           \(x) inherits(x, "text"), 
+           logical(1)))
+  tG <- main$grobs[[panel_idx]]$children[[text_idx]]
+  main$grobs[[panel_idx]]$children[[text_idx]] <- tG
+  
+  y_axis_idx <- grep("axis-l", matrix$layout$name)
+  if (length(y_axis_idx) > 0) {
+    matrix$grobs[y_axis_idx] <- NULL
+    matrix$layout <- matrix$layout[-y_axis_idx, ]
+  }
+  
+  # Find the panel grobs for both the main plot and the matrix plot
+  main_panel_idx <- grep("panel", main$layout$name, fixed = TRUE)
+  matrix_panel_idx <- grep("panel", matrix$layout$name, fixed = TRUE)
+  
+  # Align the widths of the panels
+  main_panel <- main$grobs[[main_panel_idx]]
+  matrix_panel <- matrix$grobs[[matrix_panel_idx]]
+  max_width <- grid::unit.pmax(main_panel$widths, matrix_panel$widths)
+  #   max_width <- sum(main_panel$widths)
+  print(matrix_panel)
+  main$grobs[[main_panel_idx]]$widths <- max_width
+  matrix$grobs[[matrix_panel_idx]]$widths <- max_width
+  
+  grid.newpage()
+  grid.draw(arrangeGrob(main, matrix, heights = ups$mb.ratio))
+}
+
+for(x in as.character(celltype_for_volc)) {
+  bpd_term <- markers_compare1[[x]]
+  bpdph_term <- markers_compare2[[x]]
+  bpdph_bpd <- markers_compare3[[x]]
+  
+  bpd_term_up <- rownames(bpd_term[bpd_term[["up_in_bpd/down_in_term_infant"]] == TRUE, ])
+  bpd_term_down <- rownames(bpd_term[bpd_term[["up_in_term_infant/down_in_bpd"]] == TRUE, ]) 
+  bpdph_term_up <- rownames(bpdph_term[bpdph_term[["up_in_bpdph/down_in_term_infant"]] == TRUE, ])
+  bpdph_term_down <- rownames(bpdph_term[bpdph_term[["up_in_term_infant/down_in_bpdph"]] == TRUE, ])
+  bpdph_bpd_up <- rownames(bpdph_bpd[bpdph_bpd[["up_in_bpdph/down_in_bpd"]] == TRUE, ])
+  bpdph_bpd_down <- rownames(bpdph_bpd[bpdph_bpd[["up_in_bpd/down_in_bpdph"]] == TRUE, ])
+  
+  upset_list <- list(
+    bpd_term_up,
+    bpd_term_down,
+    bpdph_term_up,
+    bpdph_term_down,
+    bpdph_bpd_up = bpdph_bpd_up,
+    bpdph_bpd_down = bpdph_bpd_down
+  )
+  names(upset_list) <- c("Up in BPD/Down in Term infant",
+                         "Up in Term infant/Down in BPD",
+                         "Up in BPD+PH/Down in Term infant",
+                         "Up in Term infant/Down in BPD+PH",
+                         "Up in BPD+PH/Down in BPD",
+                         "Up in BPD/Down in BPD+PH")
+  # names(upset_list) <- c("a", "b", "c", "d", "e", "f")
+  pdf(file = paste0("./data/figures/deg/focus_genes/2B_upset_lineage_", x, ".pdf"),
+      width = unit(10, "cm"),
+      height = unit(15, "cm"),
+      onefile = FALSE)
+  
+  upset_plot <- upset(fromList(upset_list),
+                      sets = rev(names(upset_list)),
+                      keep.order = TRUE,
+                      mainbar.y.max = 152,
+                      text.scale = c(6, 6, 6, 6, 6, 4.5),
+                      mb.ratio = c(0.7, 0.3),
+                      point.size = 8.8,
+                      line.size = 2.8)
+  
+  skip_set_size_plot(upset_plot)
+  
+  dev.off()
+}
+```
+
+
+```{r}
+rm_genes <- c("FP236383.3", "FP671120.4")
+markers_compare1 <- lapply(markers_compare1,
+                           function(df) df[!rownames(df) %in% rm_genes, ])
+markers_compare2 <- lapply(markers_compare2,
+                           function(df) df[!rownames(df) %in% rm_genes, ])
+markers_compare3 <- lapply(markers_compare3,
+                           function(df) df[!rownames(df) %in% rm_genes, ])
+```
+
+
+```{r}
+merged_seurat_stripplot <- merged_seurat
+Idents(merged_seurat_stripplot) <- merged_seurat_stripplot$celltype_lineage
+merged_seurat_stripplot <- subset(merged_seurat_stripplot,
+                                  idents = c("Immune"),
+                                  invert = TRUE)
+Idents(merged_seurat_stripplot) <- merged_seurat$celltype
+merged_seurat_stripplot <- subset(merged_seurat_stripplot,
+                                  idents = c("Basal",
+                                             "Secretory MUC5B",
+                                             "abCap"),
+                                  invert = TRUE)
+Idents(merged_seurat_stripplot) <- merged_seurat_stripplot$broad_condition
+factor(levels(merged_seurat_stripplot$condition))
+Idents(merged_seurat_stripplot) <- merged_seurat_stripplot$condition
+cell_types <- unique(merged_seurat_stripplot@meta.data$celltype)
+cell_types
+
+#Term infant BPD
+
+de_results_list <- list()
+for (cell_type in cell_types) {
+  Idents(merged_seurat_stripplot) <- merged_seurat_stripplot$celltype
+  seurat_subset <- subset(merged_seurat_stripplot,
+                          idents = cell_type)
+  Idents(seurat_subset) <- seurat_subset$condition
+  markers <- FindMarkers(seurat_subset,
+                         ident.1 = "BPD",
+                         ident.2 = "Term infant",
+                         test.use = "MAST")
+  markers$celltype <- cell_type
+  markers$gene <- rownames(markers)
+  de_results_list[[cell_type]] <- markers
+}
+
+rm_genes <- c("FP236383.3", "FP671120.4")
+de_results_list <- lapply(de_results_list, function(df) df[!rownames(df) %in% rm_genes, ])
+
+de_results_combined <- do.call(rbind,
+                               de_results_list)
+de_results_combined$significance <- ifelse(de_results_combined$p_val_adj < 1e-05, TRUE, FALSE)
+de_results_combined$color <- ifelse(de_results_combined$significance &
+                                      de_results_combined$avg_log2FC > 1, "green3", ifelse(de_results_combined$significance &
+                                                                                             de_results_combined$avg_log2FC < -1, "#E7A19E", "grey"))
+de_results_combined$color <- factor(de_results_combined$color,
+                                    levels = c("green3", "#E7A19E", "grey"))
+de_results_combined$size <- ifelse(de_results_combined$significance &
+                                     abs(de_results_combined$avg_log2FC) > 1, 3, 2.5)
+head(de_results_combined)
+celltype_ord <- c("AT1",
+                  "AT2",
+                  "RASC",
+                  "Secretory -3A1, -3A2",
+                  "Multiciliated",
+                  "aCap",
+                  "gCap",
+                  "Arterial EC",
+                  "Pulmonary venous EC",
+                  "Systemic venous EC",
+                  "Lymphatic",
+                  "Alveolar FB",
+                  "Adventitial FB",
+                  "Activated FB",
+                  "Alveolar MyoFB",
+                  "Ductal MyoFB",
+                  "Pericyte",
+                  "VSMC")
+
+strip_plot <- ggplot() +
+  # First layer: Gray points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "grey"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "grey"], 
+                                 color = "grey")) +
+  
+  # Second layer: Up points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "green3"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "green3"], 
+                                 color = "green3")) +
+  
+  # Third layer: Down points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "#E7A19E"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "#E7A19E"], 
+                                 color = "#E7A19E")) +
+  ylim(-6,6) +
+  # Add scales, labels, and theme
+  labs(title = "DEG Across Celltype Up (purpgreenle) or Down (pink) in BPD vs Term infant",
+       x = "Celltype",
+       y = "Log2 Fold Change",
+       color = "Significance") +
+  theme_minimal() +
+  theme(text = element_text(size = 60),
+        plot.title = element_text(size = 40),
+        axis.title.y = element_text(size = 40),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+gridExtra::grid.arrange(egg::set_panel_size(p = strip_plot,
+                                            width = unit(20, "cm"),
+                                            height = unit(10, "cm")))
+
+ggsave("./data/figures/deg/focus_genes/2C_stripplot_bpd_vs_term.pdf",
+       egg::set_panel_size(p = strip_plot,
+                           width = unit(45, "cm"),
+                           height = unit(30, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(20, "cm"),
+       height = unit(30, "cm"))
+
+#BPD+PH Term infant
+
+de_results_list <- list()
+for (cell_type in cell_types) {
+  Idents(merged_seurat_stripplot) <- merged_seurat_stripplot$celltype
+  seurat_subset <- subset(merged_seurat_stripplot,
+                          idents = cell_type)
+  Idents(seurat_subset) <- seurat_subset$condition
+  markers <- FindMarkers(seurat_subset,
+                         ident.1 = "BPD+PH",
+                         ident.2 = "Term infant",
+                         test.use = "MAST")
+  markers$celltype <- cell_type
+  markers$gene <- rownames(markers)
+  de_results_list[[cell_type]] <- markers
+}
+
+rm_genes <- c("FP236383.3", "FP671120.4")
+de_results_list <- lapply(de_results_list, function(df) df[!rownames(df) %in% rm_genes, ])
+
+de_results_combined <- do.call(rbind,
+                               de_results_list)
+de_results_combined$significance <- ifelse(de_results_combined$p_val_adj < 1e-05, TRUE, FALSE)
+de_results_combined$color <- ifelse(de_results_combined$significance &
+                                      de_results_combined$avg_log2FC > 1, "#6A3D9A", ifelse(de_results_combined$significance &
+                                                                                              de_results_combined$avg_log2FC < -1, "#E7A19E", "grey"))
+de_results_combined$color <- factor(de_results_combined$color,
+                                    levels = c("#6A3D9A", "#E7A19E", "grey"))
+de_results_combined$size <- ifelse(de_results_combined$significance &
+                                     abs(de_results_combined$avg_log2FC) > 1, 3, 2.5)
+head(de_results_combined)
+celltype_ord <- c("AT1",
+                  "AT2",
+                  "RASC",
+                  "Secretory -3A1, -3A2",
+                  "Multiciliated",
+                  "aCap",
+                  "gCap",
+                  "Arterial EC",
+                  "Pulmonary venous EC",
+                  "Systemic venous EC",
+                  "Lymphatic",
+                  "Alveolar FB",
+                  "Adventitial FB",
+                  "Activated FB",
+                  "Alveolar MyoFB",
+                  "Ductal MyoFB",
+                  "Pericyte",
+                  "VSMC")
+
+strip_plot <- ggplot() +
+  # First layer: Gray points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "grey"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "grey"], 
+                                 color = "grey")) +
+  
+  # Second layer: Up points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "#6A3D9A"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "#6A3D9A"], 
+                                 color = "#6A3D9A")) +
+  
+  # Third layer: Down points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "#E7A19E"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "#E7A19E"], 
+                                 color = "#E7A19E")) +
+  ylim(-6,6) +
+  # Add scales, labels, and theme
+  labs(title = "DEG Across Celltype Up (purple) or Down (pink) in BPD+PH vs Term infant",
+       x = "Celltype",
+       y = "Log2 Fold Change",
+       color = "Significance") +
+  theme_minimal() +
+  theme(text = element_text(size = 60),
+        plot.title = element_text(size = 40),
+        axis.title.y = element_text(size = 40),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+gridExtra::grid.arrange(egg::set_panel_size(p = strip_plot,
+                                            width = unit(20, "cm"),
+                                            height = unit(10, "cm")))
+
+ggsave("./data/figures/deg/focus_genes/2C_stripplot_bpdph_vs_term.pdf",
+       egg::set_panel_size(p = strip_plot,
+                           width = unit(45, "cm"),
+                           height = unit(30, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(20, "cm"),
+       height = unit(30, "cm"))
+
+#BPD BPD+PH
+
+de_results_list <- list()
+for (cell_type in cell_types) {
+  Idents(merged_seurat_stripplot) <- merged_seurat_stripplot$celltype
+  seurat_subset <- subset(merged_seurat_stripplot,
+                          idents = cell_type)
+  Idents(seurat_subset) <- seurat_subset$condition
+  markers <- FindMarkers(seurat_subset,
+                         ident.1 = "BPD+PH",
+                         ident.2 = "BPD",
+                         test.use = "MAST")
+  markers$celltype <- cell_type
+  markers$gene <- rownames(markers)
+  de_results_list[[cell_type]] <- markers
+}
+
+rm_genes <- c("FP236383.3", "FP671120.4")
+de_results_list <- lapply(de_results_list, function(df) df[!rownames(df) %in% rm_genes, ])
+
+de_results_combined <- do.call(rbind,
+                               de_results_list)
+de_results_combined$significance <- ifelse(de_results_combined$p_val_adj < 1e-05, TRUE, FALSE)
+de_results_combined$color <- ifelse(de_results_combined$significance &
+                                      de_results_combined$avg_log2FC > 1, "#6A3D9A", ifelse(de_results_combined$significance &
+                                                                                              de_results_combined$avg_log2FC < -1, "green3", "grey"))
+de_results_combined$color <- factor(de_results_combined$color,
+                                    levels = c("#6A3D9A", "green3", "grey"))
+de_results_combined$size <- ifelse(de_results_combined$significance &
+                                     abs(de_results_combined$avg_log2FC) > 1, 3, 2.5)
+head(de_results_combined)
+celltype_ord <- c("AT1",
+                  "AT2",
+                  "RASC",
+                  "Secretory -3A1, -3A2",
+                  "Multiciliated",
+                  "aCap",
+                  "gCap",
+                  "Arterial EC",
+                  "Pulmonary venous EC",
+                  "Systemic venous EC",
+                  "Lymphatic",
+                  "Alveolar FB",
+                  "Adventitial FB",
+                  "Activated FB",
+                  "Alveolar MyoFB",
+                  "Ductal MyoFB",
+                  "Pericyte",
+                  "VSMC")
+
+strip_plot <- ggplot() +
+  # First layer: Gray points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "grey"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "grey"], 
+                                 color = "grey")) +
+  
+  # Second layer: Up points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "#6A3D9A"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "#6A3D9A"], 
+                                 color = "#6A3D9A")) +
+  
+  # Third layer: Down points
+  ggrastr::rasterise(geom_jitter(data = subset(de_results_combined,
+                                               color == "green3"),
+                                 aes(x = factor(celltype,
+                                                level = celltype_ord),
+                                     y = avg_log2FC),
+                                 width = 0.3,
+                                 size = de_results_combined$size[de_results_combined$color == "green3"], 
+                                 color = "green3")) +
+  ylim(-6,6) +
+  # Add scales, labels, and theme
+  labs(title = "DEG Across Celltype Up (purple) or Down (green) in BPD+PH vs BPD",
+       x = "Celltype",
+       y = "Log2 Fold Change",
+       color = "Significance") +
+  theme_minimal() +
+  theme(text = element_text(size = 60),
+        plot.title = element_text(size = 40),
+        axis.title.y = element_text(size = 40),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+gridExtra::grid.arrange(egg::set_panel_size(p = strip_plot,
+                                            width = unit(20, "cm"),
+                                            height = unit(10, "cm")))
+
+ggsave("./data/figures/deg/focus_genes/2C_stripplot_bpdph_vs_bpd.pdf",
+       egg::set_panel_size(p = strip_plot,
+                           width = unit(45, "cm"),
+                           height = unit(30, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(20, "cm"),
+       height = unit(30, "cm"))
+```
+
+```{r}
+celltype_for_volc <- c("AT1_BPD_Term infant",
+                       "AT2_BPD_Term infant",
+                       "gCap_BPD_Term infant",
+                       "Alveolar FB_BPD_Term infant",
+                       "Alveolar MyoFB_BPD_Term infant",
+                       "Ductal MyoFB_BPD_Term infant",
+                       "AT1_BPD+PH_Term infant",
+                       "AT2_BPD+PH_Term infant",
+                       "Multiciliated_BPD+PH_Term infant",
+                       "gCap_BPD+PH_Term infant",
+                       "aCap_BPD+PH_Term infant",
+                       "Alveolar FB_BPD+PH_Term infant",
+                       "AT1_BPD+PH_BPD")
+gene_list <- list("AT1_BPD_Term infant" = c("ATF3",
+                                            "AQP5",
+                                            "AQP5",
+                                            "SPARC",
+                                            "CXCL2"),
+                  "AT2_BPD_Term infant" = c("SFTPC",
+                                            "SFTPD",
+                                            "HHIP",
+                                            "WIF1",
+                                            "LRRK2",
+                                            "ABCA3",
+                                            "CXCL2"),
+                  "gCap_BPD_Term infant" = c("SPARCL1",
+                                             "CNN3",
+                                             "CLDN5"),
+                  "Alveolar FB_BPD_Term infant" = c("COL1A1",
+                                                    "FBLN1",
+                                                    "COL3A1",
+                                                    "COL1A2",
+                                                    "LAMA2",
+                                                    "CCN1",
+                                                    "CCN2"),
+                  "Alveolar MyoFB_BPD_Term infant" = c("FGF14"),
+                  "Ductal MyoFB_BPD_Term infant" = c("LGR6"),
+                  "AT1_BPD+PH_Term infant" = c("VIM",
+                                               "KRT8",
+                                               "AGER",
+                                               "ATF3",
+                                               "KRT18",
+                                               "CLDN4",
+                                               "SEMA3B",
+                                               "AQP4",
+                                               "CXCL2",
+                                               "VEGFA",
+                                               "SPOCK2",
+                                               "AQP5",
+                                               "LAMA3"),
+                  "AT2_BPD+PH_Term infant" = c("SFTPC",
+                                               "SFTPB",
+                                               "SFTPD",
+                                               "NFKBIA",
+                                               "SOD2",
+                                               "WIF1",
+                                               "HHIP",
+                                               "ABCA3"),
+                  "Multiciliated_BPD+PH_Term infant" = c("DNAH11",
+                                                         "DNAH9",
+                                                         "DNAH5",
+                                                         "DNAH6",
+                                                         "DNAH7"),
+                  "gCap_BPD+PH_Term infant" = c("CXCL12",
+                                                "CLDN5",
+                                                "YES1",
+                                                "SPARCL1",
+                                                "S100A4"),
+                  "aCap_BPD+PH_Term infant" = c("CLDN5",
+                                                "NFKBIA",
+                                                "CNN3",
+                                                "SPARCL1",
+                                                "S100A4"),
+                  "Alveolar FB_BPD+PH_Term infant" = c("COL1A2",
+                                                       "COL1A1",
+                                                       "COL3A1",
+                                                       "COL6A3",
+                                                       "MMP2",
+                                                       "LAMA2",
+                                                       "CCN1",
+                                                       "CCN2",
+                                                       "NFKBIA"),
+                  "AT1_BPD+PH_BPD" = c("ATF3",
+                                       "LAMA3",
+                                       "SEMA4A",
+                                       "CLDN4",
+                                       "CCN1",
+                                       "KRT8",
+                                       "KRT18",
+                                       "LAMC2"))
+
+future.apply::future_lapply(celltype_for_volc,
+                            function(x) {
+                              celltype_x <- strsplit(x, "_")[[1]][[1]]
+                              id1 <- strsplit(x, "_")[[1]][[2]]
+                              id2 <- strsplit(x, "_")[[1]][[3]]
+                              Idents(merged_seurat) <- merged_seurat$celltype
+                              merged_seurat_sub <- subset(merged_seurat,
+                                                          idents = celltype_x)
+                              Idents(merged_seurat_sub) <- merged_seurat_sub$condition
+                              foundmarkers <- FindMarkers(merged_seurat_sub,
+                                                          ident.1 = id1,
+                                                          ident.2 = id2,
+                                                          test.use = "MAST",
+                                                          logfc.threshold = 0.25)
+                              
+                              rm_genes <- c("FP236383.3",
+                                            "FP671120.4")
+                              foundmarkers <- foundmarkers[!rownames(foundmarkers) %in% rm_genes, ]
+                              filtered_genes <- gene_list[[x]]
+                              lab_italics <- paste0("italic('", rownames(foundmarkers), "')")
+                              selectLab_italics = paste0("italic('", filtered_genes, "')")
+                              
+                              if (id2 == "BPD") {
+                                keyvals <- ifelse(foundmarkers$avg_log2FC < -1 &
+                                                    foundmarkers$p_val_adj < 1e-05, "#00BD00", ifelse(foundmarkers$avg_log2FC > 1 &
+                                                                                                        foundmarkers$p_val_adj < 1e-05, "#3B007A", '#AAAAAA'))
+                                keyvals[is.na(keyvals)] <- '#AAAAAA'
+                                names(keyvals)[keyvals == "#3B007A"] <- paste0("Up in ", id1, "/Down in ", id2)
+                                names(keyvals)[keyvals == '#AAAAAA'] <- 'Not significantly changed'
+                                names(keyvals)[keyvals == "#00BD00"] <- paste0("Up in ", id2, "/Down in ", id1)
+                              } else if (id1 == "BPD+PH") {
+                                keyvals <- ifelse(foundmarkers$avg_log2FC < -1 &
+                                                    foundmarkers$p_val_adj < 1e-05, "#DF837F", ifelse(foundmarkers$avg_log2FC > 1 &
+                                                                                                        foundmarkers$p_val_adj < 1e-05, "#3B007A", '#AAAAAA'))
+                                keyvals[is.na(keyvals)] <- '#AAAAAA'
+                                names(keyvals)[keyvals == "#3B007A"] <- paste0("Up in ", id1, "/Down in ", id2)
+                                names(keyvals)[keyvals == '#AAAAAA'] <- 'Not significantly changed'
+                                names(keyvals)[keyvals == "#DF837F"] <- paste0("Up in ", id2, "/Down in ", id1)
+                              } else {
+                                keyvals <- ifelse(foundmarkers$avg_log2FC < -1 &
+                                                    foundmarkers$p_val_adj < 1e-05, "#DF837F", ifelse(foundmarkers$avg_log2FC > 1 &
+                                                                                                        foundmarkers$p_val_adj < 1e-05, "#00BD00", '#AAAAAA'))
+                                keyvals[is.na(keyvals)] <- '#AAAAAA'
+                                names(keyvals)[keyvals == "#00BD00"] <- paste0("Up in ", id1, "/Down in ", id2)
+                                names(keyvals)[keyvals == '#AAAAAA'] <- 'Not significantly changed'
+                                names(keyvals)[keyvals == "#DF837F"] <- paste0("Up in ", id2, "/Down in ", id1)
+                              }
+                              
+                              volc <- EnhancedVolcano(foundmarkers,
+                                                      lab = lab_italics,
+                                                      x = 'avg_log2FC',
+                                                      y = 'p_val_adj',
+                                                      title = NULL,
+                                                      subtitle = celltype_x,
+                                                      caption = paste0("total # of genes = ", nrow(foundmarkers)),
+                                                      selectLab = selectLab_italics,
+                                                      axisLabSize = 125,
+                                                      subtitleLabSize = 100,
+                                                      captionLabSize = 100,
+                                                      cutoffLineType = "blank",
+                                                      gridlines.minor = FALSE,
+                                                      drawConnectors = TRUE,
+                                                      lengthConnectors = unit(0.1, "npc"),
+                                                      arrowheads = FALSE,
+                                                      min.segment.length = 0,
+                                                      max.overlaps = 50,
+                                                      parseLabels = TRUE,
+                                                      colCustom = keyvals,
+                                                      boxedLabels = TRUE,
+                                                      xlim = c(-max(abs(foundmarkers$avg_log2FC)), max(abs(foundmarkers$avg_log2FC))),
+                                                      labSize = 50,
+                                                      colAlpha = 0.76,
+                                                      pointSize = c(ifelse(abs(foundmarkers$avg_log2FC) > 1 & foundmarkers$p_val_adj < 1e-05, 22, 18)),
+                                                      raster = TRUE) + theme(legend.position = 'none')
+                              
+                              gridExtra::grid.arrange(egg::set_panel_size(p = volc,
+                                                                          width = unit(50, "cm"),
+                                                                          height = unit(30, "cm")))
+                              
+                              ggsave(paste0("./data/figures/deg/focus_genes/2D_S_volc_",
+                                            tolower(id1),
+                                            "_vs_",
+                                            tolower(id2),
+                                            "_",
+                                            celltype_x,
+                                            ".pdf"),
+                                     egg::set_panel_size(p = volc,
+                                                         width = unit(100, "cm"),
+                                                         height = unit(75, "cm")),
+                                     dpi = 1200,
+                                     bg = "transparent",
+                                     width = unit(48, "cm"),
+                                     height = unit(38, "cm"))
+                            }
+)
+```
+
+
+```{r}
+endo <- readRDS("./data/checkpoint/annotated_endo.rds")
+
+endo_only <- endo
+
+Idents(endo_only) <- "celltype"
+
+endo_only$celltype <- ordered(endo_only$celltype,
+                              c("abCap",
+                                "aCap",
+                                "gCap",
+                                "Arterial EC",
+                                "Pulmonary venous EC",
+                                "Systemic venous EC",
+                                "Lymphatic"))
+
+Idents(endo_only) <- "condition"
+
+endo_only$condition <- ordered(endo_only$condition,
+                               c("Term infant",
+                                 "BPD",
+                                 "BPD+PH",
+                                 "Acute preterm injury"))
+Idents(endo_only) <- "celltype"
+
+endo_only_fority %<-% fortify.Seurat(endo_only)
+```
+
+```{r}
+endo_umap <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_point(data = endo_only_fority,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Endothelium",
+                      values = color_safe,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 3)) +
+  allumap_theme() +
+  guides(colour = guide_legend(override.aes = list(size = 3))) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+
+gridExtra::grid.arrange(egg::set_panel_size(p = endo_umap,
+                                            width = unit(15, "cm"),
+                                            height = unit(15, "cm")))
+
+ggsave("./data/checkpoint/figs/3A_endo_umap.pdf",
+       egg::set_panel_size(p = endo_umap,
+                           width = unit(15, "cm"),
+                           height = unit(15, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(9, "cm"),
+       height = unit(15, "cm"))
+```
+
+```{r}
+endo_only_fority_randomized <- endo_only_fority[sample(nrow(endo_only_fority)), ]
+
+condition_umap <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_jitter(data = endo_only_fority_randomized,
+                                 aes(x = x, y = y, color = condition),
+                                 size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Condition",
+                      values = color_allcondition,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 1)) +
+  theme(aspect.ratio = 1,
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        axis.title = element_text(hjust = 0.5)) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+
+gridExtra::grid.arrange(egg::set_panel_size(p = condition_umap,
+                                            width = unit(15, "cm"),
+                                            height = unit(15, "cm")))
+
+ggsave("./data/checkpoint/figs/S_endo_condition_umap.pdf",
+       egg::set_panel_size(p = condition_umap,
+                           width = unit(15, "cm"),
+                           height = unit(15, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(9, "cm"),
+       height = unit(9, "cm"))
+```
+
+```{r}
+freq_table <- prop.table(table(endo_only$celltype,
+                               endo_only$condition),
+                         margin = 2) * 100
+
+freq_df <- as.data.frame(freq_table)
+group_order <- levels(endo_only$condition)
+celltype_order <- levels(endo_only$celltype)
+freq_df$Var2 <- ordered(as.factor(freq_df$Var2),
+                        group_order)
+freq_df$Va1 <- ordered(as.factor(freq_df$Var1),
+                       celltype_order)
+
+celltype_proportions <- ggplot(as.data.frame(freq_table),
+                               aes(x=ordered(Var2, group_order),
+                                   y=Freq,fill=ordered(Var1, celltype_order))) +
+  geom_col() +
+  scale_fill_manual(values = color_safe_endo_proportionplot,
+                    name = "Condition") +
+  xlab("Celltype") +
+  ylab("Cell Proportion") +
+  theme(legend.text = element_markdown(size = 12),
+        legend.title = element_text(size = 12),
+        axis.text.x  = element_text(size = 12,
+                                    color = "black"),
+        axis.text.y = element_text(size = 12,
+                                   color = "black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 12),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_rect(fill = "transparent"),
+        aspect.ratio = 1.2) +
+  scale_x_discrete(expand = c(.05, .05)) +
+  scale_y_continuous(expand = c(.01, .01)) +
+  coord_fixed(0.05)
+
+ggsave("./data/checkpoint/figs/3B_endo_celltype_proportions.pdf",
+       celltype_proportions,
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(9, "cm"),
+       height = unit(7.5, "cm"))
+```
+
+```{r}
+ankrd1_plot <- FeaturePlot(endo, "ANKRD1") +
+  featureplot_theme() +
+  theme(aspect.ratio = 1,
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent")) +
+  scale_color_gradientn(colors = rev(color_glacier),
+                        name = "Expression")
+
+gridExtra::grid.arrange(egg::set_panel_size(p = ankrd1_plot,
+                                            width = unit(10, "cm"),
+                                            height = unit(10, "cm")))
+
+ggsave("./data/checkpoint/figs/3C_endo_ankrd1_plot.pdf",
+       egg::set_panel_size(p = ankrd1_plot, width = unit(10, "cm"), height = unit(10, "cm")),
+       dpi = 1200, bg = "transparent",
+       width = unit(6, "cm"), height = unit(5, "cm"))
+```
+
+```{r celltype condition metalabel}
+endo_relabel <- endo_only
+
+endo_relabel$celltype_condition <- paste0(endo_relabel$celltype, "_", endo_relabel$condition)
+```
+
+```{r}
+library(dplyr)
+df <- endo_relabel@meta.data
+celltype_condition_order <- c("aCap_Term infant",
+                              "aCap_Acute preterm injury",
+                              "aCap_BPD",
+                              "aCap_BPD+PH",
+                              "gCap_Term infant",
+                              "gCap_Acute preterm injury",
+                              "gCap_BPD",
+                              "gCap_BPD+PH",
+                              "abCap_Term infant",
+                              "abCap_Acute preterm injury",
+                              "abCap_BPD",
+                              "abCap_BPD+PH",
+                              "Arterial EC_Term infant",
+                              "Arterial EC_Acute preterm injury",
+                              "Arterial EC_BPD",
+                              "Arterial EC_BPD+PH",
+                              "Pulmonary venous EC_Term infant",
+                              "Pulmonary venous EC_Acute preterm injury",
+                              "Pulmonary venous EC_BPD",
+                              "Pulmonary venous EC_BPD+PH",
+                              "Systemic venous EC_Term infant",
+                              "Systemic venous EC_Acute preterm injury",
+                              "Systemic venous EC_BPD",
+                              "Systemic venous EC_BPD+PH",
+                              "Lymphatic_Term infant",
+                              "Lymphatic_Acute preterm injury",
+                              "Lymphatic_BPD",
+                              "Lymphatic_BPD+PH")
+df %>% arrange(factor(celltype_condition,
+                      levels = celltype_condition_order))
+
+cell_order <- rownames(df)
+```
+
+```{r main heatmap}
+endo_heatmap <- endo_relabel
+
+endo_heatmap$celltype <- ordered(endo_heatmap$celltype,
+                                 c("aCap",
+                                   "gCap",
+                                   "abCap",
+                                   "Arterial EC",
+                                   "Pulmonary venous EC",
+                                   "Systemic venous EC",
+                                   "Lymphatic"))
+
+endo_marker_genes_extended <- c("PECAM1", "RAMP2", "CALCRL", "EGFL7", "CLDN5", "CDH5", "EMCN",
+                                "EDNRB", "HPGD", "SOSTDC1",
+                                "IL7R", "BTNL9", "FCN3",
+                                "ANKRD1", "CCN1", "CCN2", "TNFRSF12A", "GDF15",
+                                "SERPINE1", "KITLG", "ADGRL2", "RGCC", "PDGFB",
+                                "CA4", "CD36", "KIAA1217", "AFF3", "KHDRBS2",
+                                "APLN", "S100A4",
+                                "HEY1", "GJA5", "DKK2", "SERPINE2",
+                                "HDAC9", "CPE", "C7",
+                                "ACKR1",
+                                "PLVAP", "SPRY1", "EBF1",
+                                "CCL21", "PROX1", "MMRN1", "TFF3")
+
+all_marker_plot <- DoHeatmap(endo_heatmap,
+                             cells = cell_order,
+                             features = endo_marker_genes_extended,
+                             group.by = "celltype",
+                             group.colors = color_safe_endo_heatmap,
+                             assay = "SCT",
+                             slot = "data",
+                             disp.max = 2)
+
+all_marker_plot_w_theme <- all_marker_plot +
+  scale_fill_gradientn(colors = rev(color_glacier),
+                       name = "Expression") +
+  theme(axis.title = element_blank(),
+        aspect.ratio = 1,
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12))
+
+gridExtra::grid.arrange(egg::set_panel_size(p = all_marker_plot_w_theme,
+                                            width = unit(30, "cm"),
+                                            height = unit(30, "cm")))
+
+ggsave("./data/checkpoint/figs/3D_endo_heatmap_markers.pdf",
+       egg::set_panel_size(p = all_marker_plot_w_theme,
+                           width = unit(30, "cm"),
+                           height = unit(30, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(30, "cm"),
+       height = unit(30, "cm"))
+```
+
+```{r condition top bar only heatmap}
+endo_heatmap$celltype_condition <- ordered(endo_heatmap$celltype_condition,
+                                           celltype_condition_order)
+
+endo_marker_genes_extended <- c("PECAM1", "RAMP2", "CALCRL", "EGFL7", "CLDN5", "CDH5", "EMCN",
+                                "EDNRB", "HPGD", "SOSTDC1",
+                                "IL7R", "BTNL9", "FCN3",
+                                "ANKRD1", "CCN1", "CCN2", "TNFRSF12A", "GDF15",
+                                "SERPINE1", "KITLG", "ADGRL2", "RGCC", "PDGFB",
+                                "CA4", "CD36", "KIAA1217", "AFF3", "KHDRBS2",
+                                "APLN", "S100A4",
+                                "HEY1", "GJA5", "DKK2", "SERPINE2",
+                                "HDAC9", "CPE", "C7",
+                                "ACKR1",
+                                "PLVAP", "SPRY1", "EBF1",
+                                "CCL21", "PROX1", "MMRN1", "TFF3")
+
+heatmap_condition_bar <- DoHeatmap(endo_heatmap,
+                                   cells = cell_order,
+                                   features = endo_marker_genes_extended,
+                                   group.by = "celltype_condition",
+                                   group.colors = rep(c("#E7A19E",
+                                                        "deepskyblue",
+                                                        "green3",
+                                                        "#6A3D9A"),
+                                                      7),
+                                   assay = "SCT",
+                                   slot = "data",
+                                   disp.max = 2,
+                                   draw.lines = FALSE)
+
+heatmap_condition_bar_w_theme <- heatmap_condition_bar +
+  scale_fill_gradientn(colors = rev(color_glacier),
+                       name = "Expression") +
+  theme(axis.title = element_blank(),
+        aspect.ratio = 1,
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12))
+
+gridExtra::grid.arrange(egg::set_panel_size(p = heatmap_condition_bar_w_theme,
+                                            width = unit(20, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./data/checkpoint/figs/S_endo_heatmap_markers_conditionbar.pdf",
+       egg::set_panel_size(p = heatmap_condition_bar_w_theme,
+                           width = unit(20, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(20, "cm"),
+       height = unit(20, "cm"))
+```
+
+```{r tip stalk dotplot}
+celltype_order <- c("abCap",
+                    "aCap",
+                    "gCap",
+                    "Arterial EC",
+                    "Pulmonary venous EC",
+                    "Systemic venous EC",
+                    "Lymphatic")
+
+endo_relabel$celltype <- ordered(as.factor(endo_relabel$celltype),
+                                 celltype_order)
+
+tip_stalk_genes <- c("ESM1", "ANGPT2", "APLN", "MCAM", "COTL1", #tip markers
+                     "KDR", "FLT4", "UNC5B", "NRP1", #downregulated tip receptors
+                     "APLNR", "TEK", "ACKR1", "HES1", "FLT1") #stalk markers
+
+tip_stalk_plot <- DotPlot(endo_relabel,
+                          features = rev(tip_stalk_genes),
+                          group.by = "celltype",
+                          dot.scale = 8,
+                          col.min = 0) +
+  coord_flip()
+
+tip_stalk_plot_w_theme <- tip_stalk_plot +
+  scale_color_gradientn(colors = rev(color_glacier),
+                        name = "Expression") +
+  scale_y_discrete() +
+  theme(axis.title = element_blank(),
+        axis.text.y = element_text(face = "italic",
+                                   hjust = 1,
+                                   size = 12),
+        axis.text.x = element_text(angle = 30,
+                                   hjust = 1,
+                                   size = 12),
+        aspect.ratio = 1,
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12))
+
+gridExtra::grid.arrange(egg::set_panel_size(p = tip_stalk_plot_w_theme,
+                                            width = unit(10, "cm"),
+                                            height = unit(15, "cm")))
+
+ggsave("./data/checkpoint/figs/3E_endo_dotplot_tipstalk_markers.pdf",
+       egg::set_panel_size(p = tip_stalk_plot_w_theme,
+                           width = unit(10, "cm"),
+                           height = unit(15, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(15, "cm"),
+       height = unit(10, "cm"))
+```
+
+```{r cellchat dotplot}
+merged_seurat_subbed <- subset(merged_seurat_subbed,
+                               condition == "Acute preterm injury",
+                               invert = TRUE)
+Idents(merged_seurat_subbed) <- merged_seurat_subbed$celltype
+merged_seurat_foxf1 <- subset(merged_seurat_subbed,
+                              idents = c("aCap",
+                                         "abCap",
+                                         "gCap"))
+Idents(merged_seurat_foxf1) <- merged_seurat_foxf1$celltype
+my_levels <- c("Term infant",
+               "BPD",
+               "BPD+PH")
+
+merged_seurat_foxf1$condition <- factor(merged_seurat_foxf1$condition,
+                                        levels = my_levels)
+
+ggsave("./data/checkpoint/figs/7A_foxf1_violin.pdf",
+       VlnPlot(merged_seurat_foxf1,
+               "FOXF1",
+               group.by = "condition",
+               cols = color_allcondition),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+```
+
+```{r violin plots}
+my_levels <- c("Term infant",
+               "BPD",
+               "BPD+PH")
+
+merged_seurat_at1 <- subset(merged_seurat_subbed,
+                            celltype == "AT1")
+merged_seurat_at1$condition <- factor(merged_seurat_at1$condition,
+                                      levels = my_levels)
+
+ggsave("./data/checkpoint/figs/4C_cellchat_at1_sema3b.pdf",
+       VlnPlot(merged_seurat_at1,
+               "SEMA3B",
+               group.by = "condition",
+               cols = color_allcondition),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+
+merged_seurat_myofb <- subset(merged_seurat_subbed,
+                              celltype %in% c("Ductal MyoFB",
+                                              "Alveolar MyoFB"))
+merged_seurat_myofb$condition <- factor(merged_seurat_myofb$condition,
+                                        levels = my_levels)
+
+ggsave("./data/checkpoint/figs/4C_cellchat_myofb_sema3c.pdf",
+       VlnPlot(merged_seurat_myofb,
+               "SEMA3C",
+               group.by = "condition",
+               cols = color_allcondition),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+
+merged_seurat_cap <- subset(merged_seurat_subbed,
+                            celltype %in% c("aCap",
+                                            "gCap",
+                                            "abCap"))
+merged_seurat_cap$condition <- factor(merged_seurat_cap$condition,
+                                      levels = my_levels)
+
+ggsave("./data/checkpoint/figs/4C_cellchat_cap_sema6a.pdf",
+       VlnPlot(merged_seurat_cap,
+               "SEMA6A",
+               group.by = "condition",
+               cols = color_allcondition),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+
+ggsave("./data/checkpoint/figs/4C_cellchat_cap_nrp1.pdf",
+       VlnPlot(merged_seurat_cap,
+               "NRP1",
+               group.by = "condition",
+               cols = color_allcondition),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+
+ggsave("./data/checkpoint/figs/4C_cellchat_cap_plxna2.pdf",
+       VlnPlot(merged_seurat_cap,
+               "PLXNA2",
+               group.by = "condition",
+               cols = color_allcondition),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+```
+
+```{r}
+acd <- readRDS("./data/acdmpv/20240307_merged_devodata_newharmony.rds")
+
+Idents(acd) <- acd$celltype
+```
+
+```{r, fig.width = 12}
+# Function for going from Seurat objects to UMAP projections easily.
+fortify.Seurat <- function(x) {
+  xy <- as.data.frame(Embeddings(x, reduction = "umap"))
+  colnames(xy) <- c("x", "y")
+  xy$x <- as.numeric(xy$x)
+  xy$y <- as.numeric(xy$y)
+  
+  return(cbind(xy, as.data.frame(x@meta.data)))
+}
+
+Idents(acd) <- acd$celltype
+epi_fortify_acd %<-% fortify.Seurat(subset(acd,
+                                           bulk_celltype == "Epithelial"))
+endo_fortify_acd %<-% fortify.Seurat(subset(acd,
+                                            bulk_celltype == "Endothelial"))
+meso_fortify_acd %<-% fortify.Seurat(subset(acd,
+                                            bulk_celltype == "Mesenchymal"))
+
+epi_fortify_acd$celltype <- ordered(as.factor(epi_fortify_acd$celltype),
+                                    c("AT1",
+                                      "AT2",
+                                      "Intermediate",
+                                      "RAS -3A2",
+                                      "Secretory -3A1, -3A2",
+                                      "Basal",
+                                      "Multiciliated",
+                                      "PNEC"))
+
+endo_fortify_acd$celltype <- ordered(endo_fortify_acd$celltype,
+                                     c("gCap",
+                                       "aCap",
+                                       "Arterial EC",
+                                       "Pulmonary venous EC",
+                                       "Systemic venous EC",
+                                       "Lymphatic",
+                                       "Proliferating"))
+
+meso_fortify_acd$celltype <- ordered(as.factor(meso_fortify_acd$celltype),
+                                     c("Alveolar FB",
+                                       "Activated FB",
+                                       "Adventitial FB",
+                                       "Alveolar MyoFB",
+                                       "Ductal MyoFB",
+                                       "Pericyte",
+                                       "VSMC",
+                                       "Chondrocyte",
+                                       "Proliferating"))
+```
+
+```{r}
+all_umap_acd <- ggplot() +
+  umap_theme() +
+  ggrastr::rasterise(geom_point(data = epi_fortify_acd,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Epithelium",
+                      values = acd_color_epi,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 1)) +
+  allumap_theme() +
+  new_scale_color() +
+  ggrastr::rasterise(geom_point(data = endo_fortify_acd,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Endothelium",
+                      values = acd_color_endo,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 3)) +
+  allumap_theme() +
+  guides(colour = guide_legend(override.aes = list(size = 3))) +
+  new_scale_color() +
+  ggrastr::rasterise(geom_point(data = meso_fortify_acd,
+                                aes(x = x, y = y, color = celltype),
+                                size = .1),
+                     dpi = 600) +
+  scale_colour_manual(name = "Mesenchyme",
+                      values = acd_color_meso,
+                      guide = guide_legend(override.aes = list(size = 3),
+                                           order = 4)) +
+  theme(legend.text = element_markdown(size = 12),
+        legend.title = element_text(size = 12),
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent")) +
+  guides(colour = guide_legend(override.aes = list(size = 3))) +
+  labs(x = "UMAP1", y = "UMAP2")
+
+gridExtra::grid.arrange(egg::set_panel_size(p = all_umap_acd,
+                                            width = unit(20, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./data/checkpoint/figs/6A_all_umap_acd.pdf",
+       egg::set_panel_size(p = all_umap_acd,
+                           width = unit(20, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 450,
+       bg = "transparent",
+       width = unit(12, "cm"),
+       height = unit(20, "cm"))
+
+```
+
+```{r}
+acd_celltype_order <- c("AT1",
+                        "Intermediate",
+                        "AT2",
+                        "RAS -3A2",
+                        "Secretory -3A1, -3A2",
+                        "Basal",
+                        "Multiciliated",
+                        "PNEC",
+                        
+                        "gCap",
+                        "aCap",
+                        "Arterial EC",
+                        "Pulmonary venous EC",
+                        "Systemic venous EC",
+                        "Lymphatic",
+                        
+                        "Alveolar FB",
+                        "Activated FB",
+                        "Adventitial FB",
+                        "Alveolar MyoFB",
+                        "Ductal MyoFB",
+                        "Pericyte",
+                        "VSMC",
+                        "Chondrocyte",
+                        "Proliferating"
+)
+
+acd$celltype <- ordered(as.factor(acd$celltype),
+                        acd_celltype_order)
+```
+
+```{r}
+epi_marker_genes <- c("AGER", "RTKN2", # AT1
+                      "GPC5", "CLDN4", # Intermediate
+                      "SFTPC", "ABCA3", # AT2
+                      "ERBB4", "SCGB3A2", # RASC
+                      "SCGB1A1", "SCGB3A1", # Secretory -3A1, -3A2
+                      "KRT5", "KRT17", # Basal
+                      "FOXJ1", "TMEM190", #Multiciliated
+                      "NRXN1", "GRP" # PNEC
+)
+endo_marker_genes <- c("IL7R", "BTNL9", # gCap
+                       "CA4", "EDNRB", # aCap
+                       "GJA5", "DKK2", # Arterial EC
+                       "HDAC9", "ACKR1", # Pulmonary venous EC
+                       "PLVAP", "SPRY1", # Systemic venous EC
+                       "CCL21", "PROX1" # Lymphatic
+)
+
+meso_marker_genes <- c("WNT2", "TCF21", # Alveolar FB
+                       "CTHRC1", "POSTN", # Activated FB
+                       "MFAP5", "SCARA5", # Adventitial FB
+                       "PDGFRA", "FGF18", # Alveolar MyoFB
+                       "WNT5A", "HHIP", # Ductal MyoFB
+                       "COX4I2", "CSPG4", # Pericyte
+                       "ITGA7", "NTRK3", # VSMC
+                       "COL2A1", "COL9A2", # Chondrocyte
+                       "MKI67", "TOP2A" # Proliferating
+)
+```
+```{r}
+all_markers <- c(epi_marker_genes,
+                 endo_marker_genes,
+                 meso_marker_genes)
+
+all_marker_plot <- DotPlot(acd,
+                           features = all_markers,
+                           group.by = "celltype",
+                           dot.scale = 6)
+
+all_marker_plot_w_theme <- all_marker_plot +
+  scale_color_gradientn(colors = rev(color_glacier),
+                        name = "Expression") +
+  scale_y_discrete(limits = rev) +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_text(face = "italic",
+                                   angle = 45,
+                                   hjust = 1,
+                                   size = 12),
+        aspect.ratio = 1,
+        panel.background = element_rect(fill = "transparent",
+                                        colour = "black"),
+        plot.background = element_rect(color = "transparent",
+                                       fill = "transparent"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12))
+
+
+
+gridExtra::grid.arrange(egg::set_panel_size(p = all_marker_plot_w_theme,
+                                            width = unit(40, "cm"),
+                                            height = unit(20, "cm")))
+
+ggsave("./data/checkpoint/figs/S_acd_alldotplot.pdf",
+       egg::set_panel_size(p = all_marker_plot_w_theme,
+                           width = unit(40, "cm"),
+                           height = unit(20, "cm")),
+       dpi = 1200,
+       bg = "transparent",
+       width = unit(30, "cm"),
+       height = unit(20, "cm"))
+```
+
+```{r}
+acd_nopreterm <- subset(acd,
+                        condition %in% c("Term Control",
+                                         "ACDMPV"))
+```
+
+```{r}
+acd_at1 <- subset(acd_nopreterm,
+                  celltype == "AT1")
+acd_at1$condition <- factor(acd_at1$condition,
+                            levels = c("Term Control",
+                                       "ACDMPV"))
+
+ggsave("./data/checkpoint/figs/6B_acd_at1_sema3b.pdf",
+       VlnPlot(acd_at1,
+               "SEMA3B",
+               group.by = "condition",
+               cols = c(acd_color_condition)),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+```
+
+```{r}
+acd_cap <- subset(acd_nopreterm,
+                  celltype %in% c("aCap",
+                                  "gCap"))
+acd_cap$condition <- factor(acd_cap$condition,
+                            levels = c("Term Control",
+                                       "ACDMPV"))
+
+ggsave("./data/checkpoint/figs/6B_acd_cap_sema6a.pdf",
+       VlnPlot(acd_cap,
+               "SEMA6A",
+               group.by = "condition",
+               cols = c(acd_color_condition)),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+
+ggsave("./data/checkpoint/figs/6B_acd_cap_nrp1.pdf",
+       VlnPlot(acd_cap,
+               "NRP1",
+               group.by = "condition",
+               cols = c(acd_color_condition)),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+
+ggsave("./data/checkpoint/figs/6B_acd_cap_plxna2.pdf",
+       VlnPlot(acd_cap,
+               "PLXNA2",
+               group.by = "condition",
+               cols = c(acd_color_condition)),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+```
+
+```{r}
+acd_fb <- subset(acd_nopreterm,
+                 celltype %in% c("Ductal MyoFB",
+                                 "Alveolar MyoFB"))
+acd_fb$condition <- factor(acd_fb$condition,
+                           levels = c("Term Control",
+                                      "ACDMPV"))
+
+ggsave("./data/checkpoint/figs/6B_acd_fb_sema3c.pdf",
+       VlnPlot(acd_fb,
+               "SEMA3C",
+               group.by = "condition",
+               cols = c(acd_color_condition)),
+       dpi = 300,
+       bg = "transparent",
+       width = unit(5, "cm"),
+       height = unit(5.8, "cm"))
+```
+
+```{r}
+stats_seurat <- subset(merged_seurat_subbed,
+                       idents = c("AT1",
+                                  "aCap",
+                                  "gCap",
+                                  "abCap",
+                                  "Ductal MyoFB",
+                                  "Alveolar MyoFB"))
+
+Idents(stats_seurat) <- "celltype"
+stats_seurat$stats_celltype <- Idents(stats_seurat)
+Idents(stats_seurat) <- "stats_celltype"
+
+stats_seurat <- RenameIdents(object = stats_seurat, "aCap" = "Capillary")
+stats_seurat <- RenameIdents(object = stats_seurat, "gCap" = "Capillary")
+stats_seurat <- RenameIdents(object = stats_seurat, "abCap" = "Capillary")
+stats_seurat <- RenameIdents(object = stats_seurat, "Alveolar MyoFB" = "MyoFB")
+stats_seurat <- RenameIdents(object = stats_seurat, "Ductal MyoFB" = "MyoFB")
+
+stats_seurat[["stats_celltype"]] <- Idents(stats_seurat)
+
+# install.packages("effectsize")
+library(effectsize)
+
+anova_generator <- function(seuratObject, gene) {
+  location <- toString("./data/figures/all/anova_generator")
+  if(!file.exists(location)) {
+    dir.create(location)
+  }
+  #Get gene expression data from Seurat object
+  Stats_table <- data.frame(FetchData(object = seuratObject,
+                                      vars = c("stats_celltype",
+                                               "condition",
+                                               gene)))
+  #Pull celltypes from Stats table
+  Stats_table_AT1 <- Stats_table[Stats_table$stats_celltype == "AT1", ]
+  Stats_table_Capillary <- Stats_table[Stats_table$stats_celltype == "Capillary", ]
+  Stats_table_MyoFB <- Stats_table[Stats_table$stats_celltype == "MyoFB", ]
+  
+  ct <- c("AT1", "Capillary", "MyoFB")
+  
+  gene_anova <- data.frame()
+  
+  for (i in 1:length(ct)) {
+    lm_i <- lm(eval(as.symbol(gene)) ~ condition,
+               data = eval(as.symbol(paste("Stats_table_",
+                                           ct[i],
+                                           sep = ""))))
+    anova_i <- anova(lm_i)
+    anova_i$stats_celltype <- ct[i]
+    eta_i <- eta_squared(anova_i,
+                         partial = FALSE)
+    anova_i$Eta2 <- eta_i$Eta2
+    anova_i$CI_low <- eta_i$CI_low
+    anova_i$CI_high <- eta_i$CI_high
+    gene_anova <- rbind(gene_anova,
+                        anova_i)
+  }
+  location <- toString("./data/figures/all/anova_generator")
+  write.csv(gene_anova,
+            toString(paste(location, "/", gene, "_anova.csv", sep = "")))
+}
+
+anova_generator(stats_seurat, "SEMA3B")
+anova_generator(stats_seurat, "SEMA3C")
+anova_generator(stats_seurat, "SEMA6A")
+anova_generator(stats_seurat, "NRP1")
+anova_generator(stats_seurat, "PLXNA2")
+anova_generator(stats_seurat, "FOXF1")
+
+
+Idents(acd_nopreterm) <- "celltype"
+acd_nopreterm$stats_celltype <- Idents(acd_nopreterm)
+Idents(acd_nopreterm) <- "stats_celltype"
+
+acd_nopreterm <- RenameIdents(object = acd_nopreterm, "aCap" = "Capillary")
+acd_nopreterm <- RenameIdents(object = acd_nopreterm, "gCap" = "Capillary")
+acd_nopreterm <- RenameIdents(object = acd_nopreterm, "Alveolar MyoFB" = "MyoFB")
+acd_nopreterm <- RenameIdents(object = acd_nopreterm, "Ductal MyoFB" = "MyoFB")
+
+acd_nopreterm[["stats_celltype"]] <- Idents(acd_nopreterm)
+
+library(plyr)
+library(dplyr)
+ttest_generator <- function(seuratObject, gene) {
+  location <- toString("./data/figures/all/anova_generator")
+  if (!file.exists(location)) {
+    dir.create(location)
+  }
+  #Get gene expression data from Seurat object
+  Stats_table <- data.frame(FetchData(object = seuratObject,
+                                      vars = c("stats_celltype",
+                                               "condition",
+                                               gene)))
+  #Pull celltypes from Stats table
+  Stats_table_AT1 <- Stats_table[Stats_table$stats_celltype == "AT1", ]
+  Stats_table_Capillary <- Stats_table[Stats_table$stats_celltype == "Capillary", ]
+  Stats_table_MyoFB <- Stats_table[Stats_table$stats_celltype == "MyoFB", ]
+  
+  ct <- c("AT1", "Capillary", "MyoFB")
+  
+  gene_ttest <- data.frame()
+  
+  for (i in 1:length(ct)) {
+    ttest_i <- t.test(eval(as.symbol(gene)) ~ condition,
+                      data = eval(as.symbol(paste("Stats_table_",
+                                                  ct[i],
+                                                  sep = ""))))
+    ttest_i <- data.frame(t(unlist(ttest_i)))
+    results <- unlist(lapply(c("statistic",
+                               "parameter",
+                               "p.value",
+                               "estimate",
+                               "conf.int"),
+                             function(y) grep(y, names(ttest_i))))
+    for (j in results) {
+      ttest_i[, j] <- as.numeric(as.character(ttest_i[, j]))
+    }
+    ttest_i$stats_celltype <- ct[i]
+    gene_ttest <- rbind(gene_ttest, ttest_i)
+  }
+  location <- toString("./data/figures/all/anova_generator")
+  write.csv(gene_ttest,
+            toString(paste(location, "/", gene, "_acd_ttest.csv", sep = "")))
+}
+
+ttest_generator(acd_nopreterm, "SEMA3B")
+ttest_generator(acd_nopreterm, "SEMA3C")
+ttest_generator(acd_nopreterm, "SEMA6A")
+ttest_generator(acd_nopreterm, "NRP1")
+ttest_generator(acd_nopreterm, "PLXNA2")
+```

@@ -1,0 +1,45 @@
+﻿file,description,origin,input,output
+scripts/01_load_GSE275938_h5.R,Read the GSE275938 CellBender .h5 files and build the Seurat objects,r.00_rawdata.r lines 1-133,GSE275938 CellBender-filtered .h5 files (GEO),seurat_list.rds
+scripts/02_upstream_load_all_data.R,Load and QC-filter all samples (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),r.00_rawdata.r lines 137-254,GSE275938 .h5 files,load_all_data.rds
+scripts/03_upstream_label_merge.R,Label and merge the samples (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),r.00_rawdata.r lines 255-302,load_all_data.rds,label_merge.rds
+scripts/04_upstream_sct_on_merge.R,SCTransform and Harmony integration of the merged object (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),r.00_rawdata.r lines 303-386,label_merge.rds,sct_on_merge.rds
+scripts/05_upstream_split_celltypes.R,Split the integrated object into the four lineages (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),r.00_rawdata.r lines 387-578,sct_on_merge.rds,split_epi/meso/endo/imm .rds
+scripts/06_QC_clustering_lineage_annotation.R,"Quality control, SCTransform, Harmony, Louvain clustering and lineage annotation",r.02_cellCluster.r lines 1-640,seurat_list.rds,"QC figures, integrated object, 30 clusters, lineage labels (Fig. 2A-C; Supplementary Fig. 1A-D)"
+scripts/07_upstream_annotate_epithelium.R,Annotate the epithelial compartment (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),r.02_cellCluster.r lines 641-1083,split_epi.rds,annotated_epi.rds
+scripts/08_upstream_annotate_endothelium.R,Annotate the endothelial compartment (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),r.02_cellCluster.r lines 1084-1321,split_endo.rds,annotated_endo.rds
+scripts/09_upstream_annotate_mesenchyme.R,Annotate the mesenchymal compartment (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),r.02_cellCluster.r lines 1322-1546,split_meso.rds,annotated_meso.rds (seven mesenchymal subpopulations)
+scripts/10_upstream_annotate_immune.R,Annotate the immune compartment (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),r.02_cellCluster.r lines 1547-1817,split_imm.rds,annotated_imm.rds
+scripts/11_merge_all_cells.R,Merge the four annotated lineages into one object (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),1_merge_all_cells.R,annotated_epi/endo/meso/imm .rds,alldata_neonatal_injury.rds
+scripts/12_cellxgene_files.R,Re-embed the merged object for the cell browser (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal)),2_cellxgene_files.R,alldata_neonatal_injury.rds,re-embedded object
+scripts/13_mesenchyme_main_figures.R,"Lineage and mesenchymal UMAP/marker figures (adapted from the public pipeline of Shirazi et al. (https://github.com/SucreLab/HumanNeonatal), adapted)",3_main_figures.R,alldata_neonatal_injury.rds,Fig. 2 panels; Supplementary Figs. 1-2
+scripts/14_mesenchyme_composition_DEG.R,"Mesenchymal composition, marker dot plots and differential expression (three comparisons)",r.03_Cell_prop.r lines 1-1280,alldata_neonatal_injury.rds / annotated_meso.rds,Fig. 2D-H; Supplementary Figs. 4-5; Supplementary Tables 6-7
+scripts/15_adventitialFB_subclusters_DEG_enrichment.R,"Adventitial fibroblast subclustering, differential expression and GO/KEGG enrichment",r.03_Cell_prop.r lines 1281-2976,meso_adventitial_FB,Fig. 3; Supplementary Fig. 6; Supplementary Tables 9-10
+scripts/16_CellChat.R,Cell-cell communication between adventitial fibroblast subclusters and lung cell types,r.03_Cell_prop.r lines 2977-4189,adventitial FB + epithelial/endothelial cells,Fig. 4A-F; Supplementary Fig. 7; Supplementary Table 11
+scripts/17_Monocle2_trajectory.R,"Pseudotime trajectory (Monocle 2, DDRTree) and trajectory-associated gene modules",r.03_Cell_prop.r lines 4190-5236,meso_adventitial_FB,Fig. 4G-J; Supplementary Tables 12-14
+scripts/18_WGCNA_GSE235562.R,WGCNA co-expression modules and module-trait correlation in GSE235562,r.03_Cell_prop.r lines 5237-5789,GSE235562 microarray matrix,Fig. 5B; Supplementary Fig. 8; Supplementary Table 15
+scripts/19_machine_learning.R,"LASSO, Random Forest, SVM-RFE and XGBoost screening of candidate genes",r.03_Cell_prop.r lines 5790-6298,disease-trajectory genes + GSE235562,Fig. 5C-H; Supplementary Table 16
+scripts/20_validation_GSE106910_ROC.R,Expression of the candidate genes in the test and validation sets and ROC analysis,r.03_Cell_prop.r lines 6299-6851,"GSE235562, GSE106910",Fig. 6A-D; Supplementary Fig. 9
+scripts/21_immune_deconvolution_xCell_CIBERSORT.R,xCell and CIBERSORT deconvolution and correlation with PHLDA1,r.03_Cell_prop.r lines 6852-8531,"GSE235562, GSE106910",Fig. 7; Supplementary Figs. 10-11; Supplementary Table 17
+scripts/22_rat_GSE242310.R,Single-cell analysis of the hyperoxic rat lung dataset,r.03_Cell_prop.r lines 8722-9378,GSE242310,Fig. 6E-H; Supplementary Fig. 9C-E
+scripts/23_nasopharyngeal_GSE164358.R,PHLDA1 and candidate gene expression in nasopharyngeal basal cells,r.03_Cell_prop.r lines 9803-10177,GSE164358,Fig. 6I
+scripts/24_scTenifoldKnk_template.R,Template for the scTenifoldKnk virtual knockout,scTenifoldKnk1.R,mesenchymal count matrix,scTenifoldKnk result object
+scripts/exploratory_not_reported/GSE249899_spatial.R,Spatial transcriptomic dataset GSE249899,r.03_Cell_prop.r lines 8532-8721,GSE249899,exploratory figures
+scripts/exploratory_not_reported/GSE137950_scRNA.R,Single-cell dataset GSE137950,r.03_Cell_prop.r lines 9379-9802,GSE137950,exploratory figures
+revision_scripts/00_setup.R,"Shared paths, objects and helper functions for the revision scripts",00_setup_R2.R,see 00_setup.R,-
+revision_scripts/B1_annotation_concordance.R,Concordance with the original annotation and DEGs of Shirazi et al. (R1-1),B1_annotation_concordance_R3.R,see 00_setup.R,"Supplementary Figs. 1E-F, 2C-D, 4C; Supplementary Table 4"
+revision_scripts/B2_donor_composition.R,"Donor-level UMAPs, cell proportions and propeller testing (R1-2)",B2_donor_composition_R2.R,see 00_setup.R,"Supplementary Figs. 3, 6A-C"
+revision_scripts/B3_pseudobulk_DESeq2.R,Donor-level pseudo-bulk differential expression with DESeq2 (R1-2),B3_pseudobulk_DESeq2.R,see 00_setup.R,Supplementary Table 8
+revision_scripts/B4_trajectory_LODO.R,Per-donor and leave-one-donor-out pseudotime analysis (R1-2),B4_trajectory_LODO.R,see 00_setup.R,Supplementary Fig. 7D-E
+revision_scripts/B4a_rebuild_monocle2.R,Rebuild the Monocle 2 trajectory object after loss of the saved object,B4a_rebuild_monocle2.R,see 00_setup.R,monocle2 object
+revision_scripts/B5_sex_check.R,Inference of donor sex and sex-chromosome sensitivity analyses (R2-2),B5_sex_check.R,see 00_setup.R,"Supplementary Fig. 13; Supplementary Tables 2, 8"
+revision_scripts/B5b_scTenifoldKnk.R,Re-run of the PHLDA1 virtual knockout without sex-chromosome genes and in female donors only (R2-2),B5b_scTenifoldKnk_R5.R,see 00_setup.R,Supplementary Table 18
+revision_scripts/B5c_sex_figures.R,Figure panels for the sex analysis (R2-2),B5c_sex_figures.R,see 00_setup.R,Supplementary Fig. 13
+revision_scripts/B5_replot_CNS.R,Re-export of the sex figure panels at print size,B5_replot_CNS.R,see 00_setup.R,Supplementary Fig. 13
+revision_scripts/B7_fix_supp_table7.R,Removal of the duplicated gene-symbol column in the supplementary tables (R2 minor 1),B7_fix_supp_table7.R,see 00_setup.R,Supplementary Table 7
+revision_scripts/B9_immune_scRNA.R,Donor-level immune composition and adventitial FB-immune CellChat in GSE275938 (R2-3),B9_immune_scRNA.R,see 00_setup.R,Supplementary Fig. 12; Supplementary Table 17
+revision_scripts/B9b_focus_AdvFB_CD8.R,Adventitial FB - CD8+ T cell pathways and ligand-receptor pairs (R2-3),B9b_focus_AdvFB_CD8.R,see 00_setup.R,Supplementary Fig. 12D-E
+revision_scripts/B9c_immune_evidence_figures.R,Donor-level immune evidence figures (R2-3),B9c_immune_evidence_figures.R,see 00_setup.R,Supplementary Fig. 12
+revision_scripts/B9_replot_CNS.R,Re-export of the immune figure panels at print size,B9_replot_CNS.R,see 00_setup.R,Supplementary Fig. 12
+revision_scripts/B10_dataset_audit.R,Audit of the public datasets and correction of their description,B10_dataset_audit.R,see 00_setup.R,"Supplementary Tables 1, 3"
+(not included),Image analysis for the IHC and multiplex immunofluorescence quantification,see MISSING_CODE.md,QuPath/Vectra exports,Fig. 8H-N; Fig. 9; Supplementary Fig. 14
+(not included),CIBERSORT source code (licence-restricted),https://cibersortx.stanford.edu,-,used by scripts/21

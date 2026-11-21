@@ -1,0 +1,10 @@
+data/*
+!data/README.md
+results/*
+!results/.gitkeep
+*.rds
+*.RData
+*.h5
+.Rhistory
+.RData
+.Rproj.user/
