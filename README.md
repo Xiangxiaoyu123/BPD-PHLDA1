@@ -97,7 +97,7 @@ Please cite the manuscript. Zenodo DOI: [to be added after the Zenodo release].
 
 ## Licence
 
-No licence file is included yet. Add one before the Zenodo release (MIT is the
-usual choice for analysis code), and note that `helper_functions/` and the
-`upstream` scripts come from https://github.com/SucreLab/HumanNeonatal and are
-covered by that repository's terms.
+The original analysis code in this repository is released under the MIT License
+(see `LICENSE`). Note that `helper_functions/` and the `upstream` scripts come
+from https://github.com/SucreLab/HumanNeonatal and are covered by that
+repository's terms.
